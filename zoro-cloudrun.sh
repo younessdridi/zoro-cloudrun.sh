@@ -1,75 +1,37 @@
 #!/bin/bash
+set -e
 
-set -euo pipefail
+echo "----------------------------------------"
+echo "         ZORO Cloud Run Deployer"
+echo "----------------------------------------"
 
-echo "====== ZORO CLOUD RUN FINAL PREMIUM ======"
+read -p "أدخل توكن البوت: " BOT_TOKEN
+read -p "أدخل آيدي التليغرام الذي يستقبل الرابط: " CHAT_ID
+read -p "أدخل UUID (اضغط Enter لتوليد واحد تلقائياً): " UUID
 
-# UUID
-read -p "🧬 UUID (اتركه فارغ لتوليد UUID تلقائياً): " UUID
-if [ -z "$UUID" ]; then
-  UUID=$(cat /proc/sys/kernel/random/uuid)
-  echo "✅ UUID Generated: $UUID"
+if [[ -z "$UUID" ]]; then
+    UUID=$(cat /proc/sys/kernel/random/uuid)
 fi
 
-# CPU
-echo ""
-echo "====== CPU Options ======"
-echo "1) 1 vCPU"
-echo "2) 2 vCPU"
-echo "3) 4 vCPU"
-read -p "اختر رقم CPU: " CPU_CHOICE
-case $CPU_CHOICE in
-  1) CPU="1";;
-  2) CPU="2";;
-  3) CPU="4";;
-  *) echo "❌ خطأ"; exit 1;;
-esac
+read -p "اختر المنطقة (مثال: us-central1): " REGION
+read -p "اختر اسم الخدمة (مثال: zoro-vless): " SERVICE
 
-# RAM
-echo ""
-echo "====== RAM Options ======"
-echo "1) 256Mi"
-echo "2) 512Mi"
-echo "3) 1Gi"
-echo "4) 2Gi"
-echo "5) 4Gi"
-read -p "اختر رقم RAM: " RAM_CHOICE
-case $RAM_CHOICE in
-  1) RAM="256Mi";;
-  2) RAM="512Mi";;
-  3) RAM="1Gi";;
-  4) RAM="2Gi";;
-  5) RAM="4Gi";;
-  *) echo "❌ خطأ"; exit 1;;
-esac
+# إنشاء فولدر
+mkdir -p zoro
+cd zoro
 
-# Region
-echo ""
-echo "====== Region Options ======"
-echo "1) us-central1 🇺🇸"
-echo "2) europe-west1 🇪🇺"
-echo "3) europe-north1 🇫🇮"
-echo "4) asia-east1 🇭🇰"
-read -p "اختر رقم Region: " R_CHOICE
-case $R_CHOICE in
-  1) REGION="us-central1";;
-  2) REGION="europe-west1";;
-  3) REGION="europe-north1";;
-  4) REGION="asia-east1";;
-  *) echo "❌ خطأ"; exit 1;;
-esac
+# إنشاء Dockerfile
+cat > Dockerfile <<EOF
+FROM teddysun/v2ray:latest
+EXPOSE 8080
+COPY config.json /etc/v2ray/config.json
+COPY index.html /www/index.html
 
-# Bot Info
-read -p "🤖 أدخل توكن البوت: " TOKEN
-read -p "👤 أدخل ID الخاص بك: " ADMIN_ID
+CMD ["sh", "-c", "cp -r /www /usr/share/nginx/html 2>/dev/null || true; v2ray run -config /etc/v2ray/config.json"]
+EOF
 
-SERVICE_NAME="zoro-$(tr -dc a-z0-9 </dev/urandom | head -c 5)"
-
-mkdir -p zoro-cloudrun
-cd zoro-cloudrun
-
-# config.json
-cat <<EOF > config.json
+# إنشاء config.json
+cat > config.json <<EOF
 {
   "inbounds": [
     {
@@ -87,90 +49,81 @@ cat <<EOF > config.json
       "streamSettings": {
         "network": "ws",
         "wsSettings": {
-          "path": "/@zoro_40"
+          "path": "/zoro"
         }
       }
     }
   ],
   "outbounds": [
-    { "protocol": "freedom" }
+    {
+      "protocol": "freedom",
+      "settings": {}
+    }
   ]
 }
 EOF
 
-# index.html (صفحة ترحيبية)
-cat <<EOF > index.html
+# إنشاء صفحة ترحيب
+cat > index.html <<EOF
 <!DOCTYPE html>
-<html>
+<html lang="ar">
 <head>
+<meta charset="UTF-8">
 <title>ZORO SERVER</title>
 <style>
 body {
-  background: black;
-  color: #fff;
+  background: #000;
+  color: #00eaff;
+  font-family: 'Tahoma';
   text-align: center;
-  font-family: Arial;
-  padding-top: 90px;
+  padding-top: 100px;
 }
 h1 {
   font-size: 45px;
-  color: #ff0000;
-  text-shadow: 0 0 20px #ff0000;
+  text-shadow: 0 0 20px #00eaff;
 }
 p {
-  font-size: 20px;
-  opacity: 0.8;
+  font-size: 22px;
+  opacity: .8;
+}
+.logo {
+  font-size: 80px;
+  margin-bottom: 20px;
+  text-shadow: 0 0 35px #ff0000;
 }
 </style>
 </head>
 <body>
-<h1>🔥 ZORO SERVER ACTIVE 🔥</h1>
-<p>Welcome to your Cloud Run VLESS Server</p>
+<div class="logo">⚔️</div>
+<h1>مرحباً بك في سيرفر ZORO</h1>
+<p>السيرفر يعمل الآن بنجاح ✔️</p>
+<p>WebSocket Path: /zoro</p>
 </body>
 </html>
 EOF
 
-# Dockerfile
-cat <<EOF > Dockerfile
-FROM teddysun/v2ray:latest
-EXPOSE 8080
-COPY config.json /etc/v2ray/config.json
-COPY index.html /usr/share/nginx/html/index.html
-CMD ["v2ray", "run", "-config", "/etc/v2ray/config.json"]
-EOF
+# بناء الصورة
+gcloud builds submit --tag gcr.io/\$(gcloud config get-value project)/$SERVICE
 
-# Build & Deploy
-gcloud builds submit --tag gcr.io/\$(gcloud config get-value project)/$SERVICE_NAME
-gcloud run deploy $SERVICE_NAME \
-  --image gcr.io/\$(gcloud config get-value project)/$SERVICE_NAME \
-  --platform managed \
+# نشر Cloud Run
+URL=$(gcloud run deploy $SERVICE \
+  --image gcr.io/\$(gcloud config get-value project)/$SERVICE \
   --region $REGION \
-  --cpu $CPU \
-  --memory $RAM \
-  --allow-unauthenticated
+  --platform managed \
+  --allow-unauthenticated \
+  --port 8080 \
+  --format="value(status.url)")
 
-URL=$(gcloud run services describe $SERVICE_NAME --region $REGION --format 'value(status.url)')
+# تكوين VLESS النهائي
+VLESS="vless://$UUID@$URL:443?encryption=none&security=none&type=ws&path=/zoro#ZORO"
 
-CONFIG="vless://$UUID@$URL:443?type=ws&path=/@zoro_40&security=none#ZORO"
+# إرسال الرسالة إلى البوت
+curl -s -X POST https://api.telegram.org/bot$BOT_TOKEN/sendMessage \
+    -d chat_id=$CHAT_ID \
+    -d text="🔥 *تم إنشاء سيرفر ZORO VLESS بنجاح!* 🔥\n\n🌐 *الرابط:*\n\`\`\`\n$VLESS\n\`\`\`\n⚔️ استعمله الآن." \
+    -d parse_mode=Markdown
 
-# Send to Telegram
-curl -s -X POST "https://api.telegram.org/bot$TOKEN/sendMessage" \
--d chat_id="$ADMIN_ID" \
--d parse_mode="Markdown" \
--d text="🔥 *ZORO CLOUD RUN SERVER CREATED*\n
-🧬 UUID: \`$UUID\`
-⚙ CPU: *$CPU vCPU*
-💾 RAM: *$RAM*
-🌍 Region: *$REGION*
-🔧 Service: *$SERVICE_NAME*
-🌐 URL: $URL
+echo "----------------------------------------"
+echo "تم إرسال رابط السيرفر إلى تليغرام ✔️"
+echo "----------------------------------------"
 
-🔗 *VLESS CONFIG:*
-\`\`\`
-$CONFIG
-\`\`\`
-
-✅ صفحة ترحيبية مضافة
-"
-
-echo "تم إرسال كل شيء للبوت ✔"
