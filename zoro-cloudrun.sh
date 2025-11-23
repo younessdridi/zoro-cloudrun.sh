@@ -1,250 +1,217 @@
 #!/bin/bash
+
 set -euo pipefail
 
-# ===============================
-# ZORO Cloud Run VLESS Deployer
-# ===============================
-
-# Colors for output
+# Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-log() { echo -e "${GREEN}[$(date +'%Y-%m-%d %H:%M:%S')]${NC} $1"; }
-warn() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
-error() { echo -e "${RED}[ERROR]${NC} $1"; }
-info() { echo -e "${BLUE}[INFO]${NC} $1"; }
+log(){ echo -e "${GREEN}[$(date +'%H:%M:%S')]${NC} $1"; }
+warn(){ echo -e "${YELLOW}[WARNING]${NC} $1"; }
+error(){ echo -e "${RED}[ERROR]${NC} $1"; }
+info(){ echo -e "${BLUE}[INFO]${NC} $1"; }
 
-# -------------------------------
-# Functions for validation
-# -------------------------------
-validate_uuid() {
-    local uuid_pattern='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-    [[ $1 =~ $uuid_pattern ]]
+# Validate UUID
+validate_uuid(){
+    [[ $1 =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || return 1
 }
 
-validate_bot_token() {
-    local token_pattern='^[0-9]{8,10}:[a-zA-Z0-9_-]{35}$'
-    [[ $1 =~ $token_pattern ]]
+# Validate telegram bot token
+validate_bot_token(){
+    [[ $1 =~ ^[0-9]{8,10}:[a-zA-Z0-9_-]{35}$ ]] || return 1
 }
 
-validate_chat_id() {
-    [[ $1 =~ ^-?[0-9]+$ ]]
+validate_id(){
+    [[ $1 =~ ^-?[0-9]+$ ]] || return 1
 }
 
-validate_channel_id() {
-    [[ $1 =~ ^-?[0-9]+$ ]]
-}
-
-# -------------------------------
-# CPU Selection
-# -------------------------------
-select_cpu() {
+# ======== REGION LIST ========
+select_region(){
     echo
-    info "=== CPU Configuration ==="
-    echo "1. 1 CPU Core"
-    echo "2. 2 CPU Cores"
-    echo "3. 4 CPU Cores"
-    echo "4. 8 CPU Cores"
-    while true; do
-        read -p "Select CPU cores (1-4): " cpu_choice
-        case $cpu_choice in
-            1) CPU=1; break ;;
-            2) CPU=2; break ;;
-            3) CPU=4; break ;;
-            4) CPU=8; break ;;
-            *) echo "Invalid selection";;
-        esac
-    done
-    info "Selected CPU: $CPU core(s)"
-}
-
-# -------------------------------
-# Memory Selection
-# -------------------------------
-select_memory() {
+    echo "=== اختر الدولة التي تريد نشر السرفر عليها ==="
+    echo "1. أمريكا Iowa"
+    echo "2. أمريكا Oregon"
+    echo "3. أمريكا South Carolina"
+    echo "4. أوروبا Belgium"
+    echo "5. آسيا Singapore"
+    echo "6. آسيا Japan"
+    echo "7. آسيا Taiwan"
+    echo "8. الشرق الأوسط Israel"
+    echo "9. أستراليا Sydney"
+    echo "10. أمريكا Virginia"
     echo
-    info "=== Memory Configuration ==="
-    echo "1. 512Mi"
-    echo "2. 1Gi"
-    echo "3. 2Gi"
-    echo "4. 4Gi"
-    echo "5. 8Gi"
-    echo "6. 16Gi"
-    while true; do
-        read -p "Select memory (1-6): " mem_choice
-        case $mem_choice in
-            1) MEMORY="512Mi"; break ;;
-            2) MEMORY="1Gi"; break ;;
-            3) MEMORY="2Gi"; break ;;
-            4) MEMORY="4Gi"; break ;;
-            5) MEMORY="8Gi"; break ;;
-            6) MEMORY="16Gi"; break ;;
-            *) echo "Invalid selection";;
-        esac
-    done
-    info "Selected Memory: $MEMORY"
-}
 
-# -------------------------------
-# Region Selection
-# -------------------------------
-select_region() {
-    echo
-    info "=== Region Selection ==="
-    echo "1. us-central1 (Iowa, USA)"
-    echo "2. us-west1 (Oregon, USA)"
-    echo "3. us-east1 (South Carolina, USA)"
-    echo "4. europe-west1 (Belgium)"
-    echo "5. asia-southeast1 (Singapore)"
-    echo "6. asia-northeast1 (Tokyo, Japan)"
-    echo "7. asia-east1 (Taiwan)"
-    while true; do
-        read -p "Select region (1-7): " region_choice
-        case $region_choice in
-            1) REGION="us-central1"; break ;;
-            2) REGION="us-west1"; break ;;
-            3) REGION="us-east1"; break ;;
-            4) REGION="europe-west1"; break ;;
-            5) REGION="asia-southeast1"; break ;;
-            6) REGION="asia-northeast1"; break ;;
-            7) REGION="asia-east1"; break ;;
-            *) echo "Invalid selection";;
-        esac
-    done
-    info "Selected region: $REGION"
-}
+    read -p "اختيارك: " r
 
-# -------------------------------
-# Telegram Destination
-# -------------------------------
-select_telegram_destination() {
-    echo
-    info "=== Telegram Destination ==="
-    echo "1. Channel only"
-    echo "2. Bot private message only"
-    echo "3. Both Channel & Bot"
-    echo "4. Don't send"
-    while true; do
-        read -p "Select (1-4): " t_choice
-        case $t_choice in
-            1) TELE_DEST="channel"; read -p "Channel ID: " TELE_CHANNEL; break ;;
-            2) TELE_DEST="bot"; read -p "Chat ID: " TELE_CHAT; break ;;
-            3) TELE_DEST="both"; read -p "Channel ID: " TELE_CHANNEL; read -p "Chat ID: " TELE_CHAT; break ;;
-            4) TELE_DEST="none"; break ;;
-            *) echo "Invalid selection";;
-        esac
-    done
-}
-
-# -------------------------------
-# User input
-# -------------------------------
-get_user_input() {
-    read -p "Enter service name: " SERVICE_NAME
-    read -p "Enter UUID (leave blank to generate): " UUID
-    UUID=${UUID:-$(cat /proc/sys/kernel/random/uuid)}
-    if [[ "$TELE_DEST" != "none" ]]; then
-        read -p "Enter Telegram Bot Token: " BOT_TOKEN
-    fi
-    read -p "Enter Host Domain [default: m.googleapis.com]: " HOST_DOMAIN
-    HOST_DOMAIN=${HOST_DOMAIN:-"m.googleapis.com"}
-}
-
-# -------------------------------
-# Summary
-# -------------------------------
-show_summary() {
-    echo
-    info "=== Configuration Summary ==="
-    echo "Service: $SERVICE_NAME"
-    echo "UUID: $UUID"
-    echo "CPU: $CPU"
-    echo "Memory: $MEMORY"
-    echo "Region: $REGION"
-    echo "Host: $HOST_DOMAIN"
-    echo "Telegram: $TELE_DEST"
-    [[ "$TELE_DEST" == "channel" || "$TELE_DEST" == "both" ]] && echo "Channel ID: $TELE_CHANNEL"
-    [[ "$TELE_DEST" == "bot" || "$TELE_DEST" == "both" ]] && echo "Chat ID: $TELE_CHAT"
-    echo
-    read -p "Proceed with deployment? (y/n): " confirm
-    [[ ! $confirm =~ [Yy] ]] && echo "Cancelled" && exit 0
-}
-
-# -------------------------------
-# Validate prerequisites
-# -------------------------------
-validate_prerequisites() {
-    command -v gcloud >/dev/null 2>&1 || { error "gcloud CLI required"; exit 1; }
-    command -v git >/dev/null 2>&1 || { error "git required"; exit 1; }
-}
-
-# -------------------------------
-# Telegram send function
-# -------------------------------
-send_telegram() {
-    local chat="$1"
-    local msg="$2"
-    curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
-        -d chat_id="$chat" -d text="$msg" -d parse_mode=Markdown >/dev/null
-}
-
-send_notification() {
-    local link="$1"
-    case $TELE_DEST in
-        "channel") send_telegram "$TELE_CHANNEL" "$link" ;;
-        "bot") send_telegram "$TELE_CHAT" "$link" ;;
-        "both") send_telegram "$TELE_CHANNEL" "$link"; send_telegram "$TELE_CHAT" "$link" ;;
-        "none") ;;
+    case $r in
+        1) REGION="us-central1" ;;
+        2) REGION="us-west1" ;;
+        3) REGION="us-east1" ;;
+        4) REGION="europe-west1" ;;
+        5) REGION="asia-southeast1" ;;
+        6) REGION="asia-northeast1" ;;
+        7) REGION="asia-east1" ;;
+        8) REGION="me-west1" ;;       
+        9) REGION="australia-southeast1" ;;
+        10) REGION="us-east4" ;;
+        *) error "اختيار خاطئ" ; exit 1 ;;
     esac
 }
 
-# -------------------------------
-# Main
-# -------------------------------
-main() {
-    select_region
-    select_cpu
-    select_memory
-    select_telegram_destination
-    get_user_input
-    show_summary
-    validate_prerequisites
+# ======== CPU ========
+select_cpu(){
+    echo
+    echo "1) 1 CPU"
+    echo "2) 2 CPU"
+    echo "3) 4 CPU"
+    read -p "اختر CPU: " c
 
-    log "Cloning gcp-v2ray repo..."
+    case $c in
+        1) CPU="1" ;;
+        2) CPU="2" ;;
+        3) CPU="4" ;;
+        *) CPU="1" ;;
+    esac
+}
+
+# ======== MEMORY ========
+select_memory(){
+    echo
+    echo "1) 512Mi"
+    echo "2) 1Gi"
+    echo "3) 2Gi"
+    read -p "اختر Memory: " m
+
+    case $m in
+        1) MEMORY="512Mi" ;;
+        2) MEMORY="1Gi" ;;
+        3) MEMORY="2Gi" ;;
+        *) MEMORY="1Gi" ;;
+    esac
+}
+
+# ======== TELEGRAM DESTINATION ========
+select_tg(){
+    echo
+    echo "1) إرسال للقناة"
+    echo "2) إرسال للخاص"
+    echo "3) للقناة والخاص"
+    echo "4) عدم الإرسال"
+    read -p "اختيارك: " t
+
+    case $t in
+        1) TELEGRAM_DESTINATION="channel"
+           read -p "ادخل ID القناة: " TELEGRAM_CHANNEL_ID
+           validate_id "$TELEGRAM_CHANNEL_ID" || exit ;;
+        2) TELEGRAM_DESTINATION="bot"
+           read -p "ادخل Chat ID: " TELEGRAM_CHAT_ID
+           validate_id "$TELEGRAM_CHAT_ID" || exit ;;
+        3) TELEGRAM_DESTINATION="both"
+           read -p "ادخل ID القناة: " TELEGRAM_CHANNEL_ID
+           validate_id "$TELEGRAM_CHANNEL_ID" || exit
+           read -p "ادخل Chat ID: " TELEGRAM_CHAT_ID
+           validate_id "$TELEGRAM_CHAT_ID" || exit ;;
+        4) TELEGRAM_DESTINATION="none" ;;
+        *) TELEGRAM_DESTINATION="none" ;;
+    esac
+}
+
+# ======== USER INPUT ========
+get_user_input(){
+
+    read -p "اسم السرفر: " SERVICE_NAME
+    SERVICE_NAME=${SERVICE_NAME:-"zoro-server"}
+
+    read -p "ادخل UUID (اضغط Enter لإستخدام الافتراضي): " UUID
+    UUID=${UUID:-"ba0e3984-ccc9-48a3-8074-b2f507f41ce8"}
+
+    validate_uuid "$UUID" || { error "UUID غير صحيح" ; exit 1 ; }
+
+    if [[ "$TELEGRAM_DESTINATION" != "none" ]]; then
+        read -p "Bot Token: " TELEGRAM_BOT_TOKEN
+        validate_bot_token "$TELEGRAM_BOT_TOKEN" || exit 1
+    fi
+
+    read -p "Host Domain (افتراضي m.googleapis.com): " HOST_DOMAIN
+    HOST_DOMAIN=${HOST_DOMAIN:-"m.googleapis.com"}
+}
+
+send_tg(){
+    curl -s -X POST \
+        -H "Content-Type: application/json" \
+        -d "{\"chat_id\":\"$1\",\"text\":\"$2\",\"parse_mode\":\"Markdown\"}" \
+        https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage
+}
+
+# ======= MAIN DEPLOY FUNCTION =======
+deploy(){
+
+    PROJECT_ID=$(gcloud config get-value project)
+
+    gcloud services enable cloudbuild.googleapis.com run.googleapis.com iam.googleapis.com --quiet
+
     rm -rf gcp-v2ray
     git clone https://github.com/nyeinkokoaung404/gcp-v2ray.git
     cd gcp-v2ray
 
-    log "Building container..."
-    gcloud builds submit --tag gcr.io/$(gcloud config get-value project)/$SERVICE_NAME --quiet
+    log "Building..."
+    gcloud builds submit --tag gcr.io/${PROJECT_ID}/gcp-v2ray --quiet
 
-    log "Deploying Cloud Run..."
-    gcloud run deploy $SERVICE_NAME \
-        --image gcr.io/$(gcloud config get-value project)/$SERVICE_NAME \
+    log "Deploy..."
+    gcloud run deploy ${SERVICE_NAME} \
+        --image gcr.io/${PROJECT_ID}/gcp-v2ray \
+        --region ${REGION} \
         --platform managed \
-        --region $REGION \
         --allow-unauthenticated \
-        --cpu $CPU \
-        --memory $MEMORY \
+        --cpu ${CPU} \
+        --memory ${MEMORY} \
         --quiet
 
-    SERVICE_URL=$(gcloud run services describe $SERVICE_NAME --region $REGION --format 'value(status.url)')
+    SERVICE_URL=$(gcloud run services describe ${SERVICE_NAME} --region ${REGION} --format 'value(status.url)')
     DOMAIN=$(echo $SERVICE_URL | sed 's|https://||')
 
-    VLESS_LINK="vless://${UUID}@${HOST_DOMAIN}:443?path=%2Fzoro&security=tls&encryption=none&type=ws&sni=${DOMAIN}#${SERVICE_NAME}"
+    # ****** PATCH FIXED HERE /zoro ******
+    PATCH="/zoro"
 
-    echo "Deployment finished!"
-    echo "Service URL: $SERVICE_URL"
-    echo "VLESS Link: $VLESS_LINK"
+    VLESS="vless://${UUID}@${HOST_DOMAIN}:443?path=%2Fzoro&security=tls&alpn=h3%2Ch2%2Chttp%2F1.1&encryption=none&host=${DOMAIN}&fp=randomized&type=ws&sni=${DOMAIN}#${SERVICE_NAME}"
 
-    send_notification "$VLESS_LINK"
+    MSG="*تم إنشاء سرفر ZORO بنجاح ✅*
+━━━━━━━━━━━━━━
+• *Project:* \`${PROJECT_ID}\`
+• *Service:* \`${SERVICE_NAME}\`
+• *Region:* ${REGION}
+• *CPU:* ${CPU}
+• *RAM:* ${MEMORY}
+• *URL:* ${DOMAIN}
 
-    log "All done!"
+🔗 *VLESS*
+\`${VLESS}\`
+━━━━━━━━━━━━━━"
+
+    echo "$MSG"
+
+    # === SEND TO TELEGRAM ===
+    if [[ "$TELEGRAM_DESTINATION" == "channel" ]]; then
+        send_tg "$TELEGRAM_CHANNEL_ID" "$MSG"
+    fi
+    if [[ "$TELEGRAM_DESTINATION" == "bot" ]]; then
+        send_tg "$TELEGRAM_CHAT_ID" "$MSG"
+    fi
+    if [[ "$TELEGRAM_DESTINATION" == "both" ]]; then
+        send_tg "$TELEGRAM_CHANNEL_ID" "$MSG"
+        send_tg "$TELEGRAM_CHAT_ID" "$MSG"
+    fi
+
+    log "تم نشر السرفر بنجاح 🎉"
 }
 
-main "$@"
-
-
+# RUN
+select_region
+select_cpu
+select_memory
+select_tg
+get_user_input
+deploy
