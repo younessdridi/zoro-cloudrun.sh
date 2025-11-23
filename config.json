@@ -6,7 +6,7 @@
       "settings": {
         "clients": [
           {
-            "id": "REPLACE-UUID-HERE",
+            "id": "UUID_HERE",
             "level": 0
           }
         ],
@@ -15,7 +15,7 @@
       "streamSettings": {
         "network": "ws",
         "wsSettings": {
-          "path": "/@zoro_40"
+          "path": "/zoro"
         }
       }
     }
